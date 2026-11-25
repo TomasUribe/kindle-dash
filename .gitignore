@@ -1,0 +1,20 @@
+# Build output and the generated parts of the installer
+/dist/
+/app/dist/
+/app/cmd/kdash-setup/payload/kdash.gz
+/app/cmd/kdash-setup/payload/icon.png
+
+# Local toolchain and caches
+/.toolchain/
+
+# Personal files: never commit these
+.env
+*.env
+/config.json
+**/config.json
+spotify_token.json
+.spotify_token.json
+state.json
+*.log
+last-view.png
+.DS_Store

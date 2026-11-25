@@ -1,0 +1,10 @@
+{
+  "calendars": [
+    { "name": "Work", "url": "https://calendar.google.com/calendar/ical/EXAMPLE/private-EXAMPLE/basic.ics" },
+    { "name": "Family", "url": "https://calendar.google.com/calendar/ical/EXAMPLE2/private-EXAMPLE2/basic.ics" }
+  ],
+  "spotify_client_id": "00000000000000000000000000000000",
+  "timezone": "Europe/Berlin",
+  "clock24": true,
+  "week_starts_monday": true
+}
