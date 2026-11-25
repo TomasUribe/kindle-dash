@@ -15,42 +15,82 @@ import (
 	"time"
 )
 
-// ArtCache downloads the current album cover once and hands it out at any size, in gray.
+// ArtCache downloads album covers once and hands them out at any size, in gray. It keeps a few, so the
+// next song's cover can be warmed while the current one is still on screen.
 type ArtCache struct {
 	mu      sync.Mutex
-	url     string
-	src     image.Image
-	sized   map[int]*image.Gray
-	loading string
-	failed  string
+	entries map[string]*artEntry
+	order   []string             // oldest first, for eviction
+	loading map[string][]func()  // url -> who to tell when it is ready
+	failed  map[string]time.Time // url -> when it failed; tried again after artRetry
 }
 
-func NewArtCache() *ArtCache { return &ArtCache{sized: map[int]*image.Gray{}} }
+type artEntry struct {
+	src   image.Image
+	sized map[int]*image.Gray
+}
 
-// Request starts a download when the cover changed; done runs after a new cover is ready.
+const (
+	artKeep  = 3
+	artRetry = time.Minute
+)
+
+// fetchArt is how covers are downloaded; tests replace it.
+var fetchArt = loadArt
+
+func NewArtCache() *ArtCache {
+	return &ArtCache{entries: map[string]*artEntry{}, loading: map[string][]func(){}, failed: map[string]time.Time{}}
+}
+
+// Request starts a download unless the cover is already here or on its way; done (if any) runs once the
+// cover is ready, including when it was already downloading for someone else.
 func (a *ArtCache) Request(url string, done func()) {
 	if url == "" {
 		return
 	}
 	a.mu.Lock()
-	if a.url == url || a.loading == url || a.failed == url {
+	if _, ok := a.entries[url]; ok {
 		a.mu.Unlock()
 		return
 	}
-	a.loading = url
-	a.mu.Unlock()
-	go func() {
-		img, err := loadArt(url)
-		a.mu.Lock()
-		a.loading = ""
-		if err != nil {
-			a.failed = url
-		} else {
-			a.url, a.src, a.sized = url, img, map[int]*image.Gray{}
+	if at, bad := a.failed[url]; bad && time.Since(at) < artRetry {
+		a.mu.Unlock()
+		return
+	}
+	if waiters, busy := a.loading[url]; busy {
+		if done != nil {
+			a.loading[url] = append(waiters, done)
 		}
 		a.mu.Unlock()
-		if err == nil && done != nil {
-			done()
+		return
+	}
+	var waiters []func()
+	if done != nil {
+		waiters = []func(){done}
+	}
+	a.loading[url] = waiters
+	a.mu.Unlock()
+	go func() {
+		img, err := fetchArt(url)
+		a.mu.Lock()
+		waiters := a.loading[url]
+		delete(a.loading, url)
+		if err != nil {
+			a.failed[url] = time.Now()
+		} else {
+			delete(a.failed, url)
+			a.entries[url] = &artEntry{src: img, sized: map[int]*image.Gray{}}
+			a.order = append(a.order, url)
+			for len(a.order) > artKeep {
+				delete(a.entries, a.order[0])
+				a.order = a.order[1:]
+			}
+		}
+		a.mu.Unlock()
+		if err == nil {
+			for _, f := range waiters {
+				f()
+			}
 		}
 	}()
 }
@@ -59,14 +99,15 @@ func (a *ArtCache) Request(url string, done func()) {
 func (a *ArtCache) Get(url string, size int) *image.Gray {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.url != url || a.src == nil {
+	e := a.entries[url]
+	if e == nil {
 		return nil
 	}
-	if g, ok := a.sized[size]; ok {
+	if g, ok := e.sized[size]; ok {
 		return g
 	}
-	g := ToGray(a.src, size, size)
-	a.sized[size] = g
+	g := ToGray(e.src, size, size)
+	e.sized[size] = g
 	return g
 }
 

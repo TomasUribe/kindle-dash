@@ -117,9 +117,9 @@ type Path struct {
 	ox, oy float32
 }
 
-func (p *Path) Move(x, y float64)    { p.r.MoveTo(float32(x)-p.ox, float32(y)-p.oy) }
-func (p *Path) Line(x, y float64)    { p.r.LineTo(float32(x)-p.ox, float32(y)-p.oy) }
-func (p *Path) Close()               { p.r.ClosePath() }
+func (p *Path) Move(x, y float64) { p.r.MoveTo(float32(x)-p.ox, float32(y)-p.oy) }
+func (p *Path) Line(x, y float64) { p.r.LineTo(float32(x)-p.ox, float32(y)-p.oy) }
+func (p *Path) Close()            { p.r.ClosePath() }
 func (p *Path) Cubic(a, b, c, d, e, f float64) {
 	p.r.CubeTo(float32(a)-p.ox, float32(b)-p.oy, float32(c)-p.ox, float32(d)-p.oy, float32(e)-p.ox, float32(f)-p.oy)
 }
@@ -430,7 +430,7 @@ func IconHome(c *Canvas, cx, cy, s float64, v uint8, bg uint8) {
 func IconCalendar(c *Canvas, cx, cy, s float64, v uint8, bg uint8) {
 	x, y, w, h := cx-s*0.45, cy-s*0.4, s*0.9, s*0.84
 	c.Shape(Rect{int(x) - 2, int(y) - 2, int(w) + 5, int(h) + 5}, v, func(p *Path) { roundRectPath(p, x, y, w, h, s*0.1) })
-	c.Shape(Rect{int(x) + 2, int(y+h*0.28), int(w) - 3, int(h*0.64)}, bg, func(p *Path) {
+	c.Shape(Rect{int(x) + 2, int(y + h*0.28), int(w) - 3, int(h * 0.64)}, bg, func(p *Path) {
 		roundRectPath(p, x+s*0.07, y+h*0.3, w-s*0.14, h*0.62, s*0.04)
 	})
 	for _, dx := range []float64{-0.24, 0.24} {

@@ -90,7 +90,7 @@ func writePNG(path string, img *image.Gray) error {
 // NullDisplay counts updates; the simulator reads the frame straight from the app.
 type NullDisplay struct{ Fulls, Partials atomic.Int64 }
 
-func (n *NullDisplay) Full(*image.Gray) error                { n.Fulls.Add(1); return nil }
+func (n *NullDisplay) Full(*image.Gray) error                     { n.Fulls.Add(1); return nil }
 func (n *NullDisplay) Partial(*image.Gray, image.Rectangle) error { n.Partials.Add(1); return nil }
 
 // diffRects finds the regions that differ between two frames. full is true when so much

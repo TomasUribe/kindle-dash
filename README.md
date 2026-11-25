@@ -11,6 +11,7 @@ and no computer left switched on, and everything is drawn for a slow e-ink scree
 
 * **Music**: the album cover is the centrepiece. Play, pause, skip, volume. **Tap or drag on the progress line to jump
   to any point in the song.**
+* **Next cover ready in time:** a few seconds before a song ends, the next song's cover and title are already on screen.
 * **Lyrics**: synced lyrics a page at a time with the cover and controls on top. The highlighted line moves a moment
   *before* it is sung, because e-ink needs time to redraw, and pages turn only after the last line has been sung.
 * **Library**: browse your playlists, albums, liked songs, recent plays and Spotify devices, and tap to play.

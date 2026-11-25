@@ -27,20 +27,21 @@ type Config struct {
 	Clock24            *bool          `json:"clock24"`
 	WeekStartsMonday   *bool          `json:"week_starts_monday"`
 	PollSeconds        int            `json:"poll_seconds"`
-	ProgressSeconds    int            `json:"progress_seconds"`     // progress bar moves in steps this long
-	FullRefreshEvery   int            `json:"full_refresh_every"`  // partial updates before a clean flash
-	FbinkFullArgs      []string       `json:"fbink_full_args"`     // default: -c -f
-	FbinkPartialArgs   []string       `json:"fbink_partial_args"`  // default: none (try -W GL16)
+	ProgressSeconds    int            `json:"progress_seconds"`   // progress bar moves in steps this long
+	FullRefreshEvery   int            `json:"full_refresh_every"` // partial updates before a clean flash
+	FbinkFullArgs      []string       `json:"fbink_full_args"`    // default: -c -f
+	FbinkPartialArgs   []string       `json:"fbink_partial_args"` // default: none (try -W GL16)
 	LyricsEnabled      *bool          `json:"lyrics"`
-	LyricsLeadSeconds  float64        `json:"lyrics_lead_seconds"` // show a line this long before it is sung
-	StateFile          string         `json:"state_file"` // remembers view and orientation
+	LyricsLeadSeconds  float64        `json:"lyrics_lead_seconds"`     // show a line this long before it is sung
+	NextTrackLead      float64        `json:"next_track_lead_seconds"` // show the next song's cover and title this long before it starts; negative: off
+	StateFile          string         `json:"state_file"`              // remembers view and orientation
 
 	Loc *time.Location `json:"-"`
 	Dir string         `json:"-"`
 }
 
-func (c *Config) Use24h() bool       { return c.Clock24 == nil || *c.Clock24 }
-func (c *Config) UseLyrics() bool    { return c.LyricsEnabled == nil || *c.LyricsEnabled }
+func (c *Config) Use24h() bool      { return c.Clock24 == nil || *c.Clock24 }
+func (c *Config) UseLyrics() bool   { return c.LyricsEnabled == nil || *c.LyricsEnabled }
 func (c *Config) MondayFirst() bool { return c.WeekStartsMonday == nil || *c.WeekStartsMonday }
 
 func LoadConfig(path string) (*Config, error) {
@@ -84,6 +85,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.LyricsLeadSeconds <= 0 {
 		c.LyricsLeadSeconds = 2.0 // the panel needs a moment to redraw, so the highlight runs early
+	}
+	if c.NextTrackLead == 0 {
+		c.NextTrackLead = 3 // the screen needs a moment, so the next cover goes up just before the song starts
 	}
 	if c.FullRefreshEvery <= 0 {
 		c.FullRefreshEvery = 40

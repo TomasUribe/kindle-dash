@@ -48,6 +48,11 @@ func (f *fakeSpotify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"devices":[{"id":"d1","name":"Living room","type":"Speaker","is_active":false},
 		  {"id":"d2","name":"Phone","type":"Smartphone","is_active":true},
 		  {"id":"d3","name":"Locked","type":"TV","is_restricted":true}]}`)
+	case r.URL.Path == "/me/player/queue" && r.Method == "GET":
+		fmt.Fprint(w, `{"currently_playing":{"name":"Now","uri":"spotify:track:now"},"queue":[
+		  {"type":"track","name":"Up Next","uri":"spotify:track:next","duration_ms":181000,
+		   "artists":[{"name":"X"},{"name":"Y"}],"album":{"name":"The Album","images":[{"url":"https://img.example/big.jpg"},{"url":"https://img.example/small.jpg"}]}},
+		  {"name":"After That","uri":"spotify:track:after"}]}`)
 	case r.URL.Path == "/me/player/seek" && r.Method == "PUT":
 		f.seeks = append(f.seeks, r.URL.Query().Get("position_ms"))
 		w.WriteHeader(204)

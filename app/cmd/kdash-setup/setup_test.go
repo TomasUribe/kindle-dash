@@ -162,9 +162,9 @@ func TestCheckCalendarNeverEchoesTheAddress(t *testing.T) {
 
 func TestNormalizeCalendarURL(t *testing.T) {
 	for in, want := range map[string]string{
-		"webcal://example.com/a.ics":   "https://example.com/a.ics",
+		"webcal://example.com/a.ics":    "https://example.com/a.ics",
 		`  "https://example.com/a.ics"`: "https://example.com/a.ics",
-		"<https://example.com/a.ics>":  "https://example.com/a.ics",
+		"<https://example.com/a.ics>":   "https://example.com/a.ics",
 	} {
 		if got := normalizeCalendarURL(in); got != want {
 			t.Errorf("%q -> %q, want %q", in, got, want)
@@ -191,12 +191,12 @@ func fakePayload(t *testing.T) {
 	w.Close()
 	old := payloadFS
 	payloadFS = fstest.MapFS{
-		"payload/kdash.gz":       {Data: gz.Bytes()},
-		"payload/run.sh":         {Data: []byte("#!/bin/sh\necho run\n")},
-		"payload/cacert.pem":     {Data: []byte("CERTS")},
-		"payload/icon.png":       {Data: []byte("PNG")},
-		"payload/" + entryName:   {Data: []byte("#!/bin/sh\n# Name: Kindle Dash\n# Icon: x\nrun\n")},
-		"payload/" + diagName:    {Data: []byte("#!/bin/sh\n# Name: Diagnose\n# Icon: x\ndiag\n")},
+		"payload/kdash.gz":     {Data: gz.Bytes()},
+		"payload/run.sh":       {Data: []byte("#!/bin/sh\necho run\n")},
+		"payload/cacert.pem":   {Data: []byte("CERTS")},
+		"payload/icon.png":     {Data: []byte("PNG")},
+		"payload/" + entryName: {Data: []byte("#!/bin/sh\n# Name: Kindle Dash\n# Icon: x\nrun\n")},
+		"payload/" + diagName:  {Data: []byte("#!/bin/sh\n# Name: Diagnose\n# Icon: x\ndiag\n")},
 	}
 	t.Cleanup(func() { payloadFS = old })
 }

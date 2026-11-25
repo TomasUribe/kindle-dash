@@ -41,13 +41,13 @@ func TestCurrentIndex(t *testing.T) {
 
 func TestCleanTitle(t *testing.T) {
 	for in, want := range map[string]string{
-		"Married with Children - Remastered":        "Married with Children",
-		"Song Name (Remastered 2011)":               "Song Name",
-		"Song Name - 2009 Remaster":                 "Song Name",
-		"Shine On You Crazy Diamond (Pts. 6-9)":     "Shine On You Crazy Diamond (Pts. 6-9)",
-		"Plain Title":                               "Plain Title",
-		"Another One - Live at Somewhere":           "Another One",
-		"Something (feat. A Friend) - Radio Edit":   "Something (feat. A Friend)",
+		"Married with Children - Remastered":      "Married with Children",
+		"Song Name (Remastered 2011)":             "Song Name",
+		"Song Name - 2009 Remaster":               "Song Name",
+		"Shine On You Crazy Diamond (Pts. 6-9)":   "Shine On You Crazy Diamond (Pts. 6-9)",
+		"Plain Title":                             "Plain Title",
+		"Another One - Live at Somewhere":         "Another One",
+		"Something (feat. A Friend) - Radio Edit": "Something (feat. A Friend)",
 	} {
 		if got := cleanTitle(in); got != want {
 			t.Errorf("%q -> %q, want %q", in, got, want)

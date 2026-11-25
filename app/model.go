@@ -34,18 +34,18 @@ type Agenda struct {
 
 // Player is what the music views draw.
 type Player struct {
-	Demo           bool
-	Active         bool
-	Playing        bool
-	Title, Artist  string
-	Album, Device  string
-	ArtURL         string
-	TrackURI       string
-	Progress, Dur  time.Duration
-	Volume         int // -1 when the device has no remote volume
-	Hint           string
-	Err            string
-	FetchedAt      time.Time
+	Demo          bool
+	Active        bool
+	Playing       bool
+	Title, Artist string
+	Album, Device string
+	ArtURL        string
+	TrackURI      string
+	Progress, Dur time.Duration
+	Volume        int // -1 when the device has no remote volume
+	Hint          string
+	Err           string
+	FetchedAt     time.Time
 }
 
 // Expected is the progress now, assuming playback kept going since FetchedAt.

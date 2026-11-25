@@ -13,7 +13,9 @@ func sampleICS(today time.Time) string {
 	day := func(n int) string { return today.AddDate(0, 0, n).Format("20060102") }
 	local := func(n, h, m int) string { return fmt.Sprintf("%sT%02d%02d00", day(n), h, m) }
 	utc := func(n, h int) string { return fmt.Sprintf("%sT%02d0000Z", day(n), h) }
-	zoned := func(prop string, n, h, m int) string { return fmt.Sprintf("%s;TZID=Asia/Kolkata:%s", prop, local(n, h, m)) }
+	zoned := func(prop string, n, h, m int) string {
+		return fmt.Sprintf("%s;TZID=Asia/Kolkata:%s", prop, local(n, h, m))
+	}
 
 	events := []string{
 		"SUMMARY:Team sync\nLOCATION:12 Example Street\\, Springfield\n" + zoned("DTSTART", 0, 15, 0) + "\n" + zoned("DTEND", 0, 16, 0),

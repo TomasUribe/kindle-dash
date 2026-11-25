@@ -85,7 +85,7 @@ type Scene struct {
 // SceneOut carries facts only the renderer knows (how many rows fit, which page it showed).
 type SceneOut struct {
 	LibRows, LibPage, LibPages int
-	LyrPage, LyrPages, LyrLine int // the page shown and the line marked as being sung (-1: none)
+	LyrPage, LyrPages, LyrLine int             // the page shown and the line marked as being sung (-1: none)
 	LyrTurns                   []time.Duration // song time at which pages 1.. come up while following
 }
 

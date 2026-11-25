@@ -21,7 +21,7 @@ type InputEvent struct {
 }
 
 const (
-	evSyn, evKey, evAbs = 0, 1, 3
+	evSyn, evKey, evAbs     = 0, 1, 3
 	absMTX, absMTY, absMTID = 53, 54, 57
 	btnTouch, keyPower      = 330, 116
 )

@@ -275,6 +275,68 @@ type apiImage struct {
 	Width int    `json:"width"`
 }
 
+// apiItem is a track or episode as Spotify describes it, in the player state and in the queue.
+type apiItem struct {
+	Type       string `json:"type"`
+	URI        string `json:"uri"`
+	Name       string `json:"name"`
+	DurationMs int64  `json:"duration_ms"`
+	Artists    []struct {
+		Name string `json:"name"`
+	} `json:"artists"`
+	Album *struct {
+		Name   string     `json:"name"`
+		Images []apiImage `json:"images"`
+	} `json:"album"`
+	Show *struct {
+		Name string `json:"name"`
+	} `json:"show"`
+	Images []apiImage `json:"images"`
+}
+
+// fillFromItem copies what is shown about a song (or podcast episode) into the player.
+func (p *Player) fillFromItem(it *apiItem) {
+	p.Title, p.TrackURI = it.Name, it.URI
+	p.Dur = time.Duration(it.DurationMs) * time.Millisecond
+	var images []apiImage
+	if it.Type == "episode" {
+		if it.Show != nil {
+			p.Artist = it.Show.Name
+		}
+		images = it.Images
+	} else {
+		names := make([]string, 0, len(it.Artists))
+		for _, a := range it.Artists {
+			names = append(names, a.Name)
+		}
+		p.Artist = strings.Join(names, ", ")
+		if it.Album != nil {
+			p.Album = it.Album.Name
+			images = it.Album.Images
+		}
+	}
+	if len(images) > 0 {
+		p.ArtURL = images[0].URL // largest first
+	}
+}
+
+// NextTrack asks which song Spotify will play after the current one. ok is false when nothing is queued.
+func (s *Spotify) NextTrack(now time.Time) (next Player, ok bool, err error) {
+	_, body, err := s.request("GET", "/me/player/queue", nil, nil)
+	if err != nil {
+		return Player{}, false, err
+	}
+	var q struct {
+		Queue []apiItem `json:"queue"`
+	}
+	if json.Unmarshal(body, &q) != nil || len(q.Queue) == 0 || q.Queue[0].Name == "" {
+		return Player{}, false, nil
+	}
+	next = Player{Active: true, Playing: true, Volume: -1, FetchedAt: now}
+	next.fillFromItem(&q.Queue[0])
+	return next, true, nil
+}
+
 func normalize(status int, body []byte, now time.Time) Player {
 	idle := Player{Volume: -1, Hint: "Start Spotify on a device to see it here", FetchedAt: now}
 	if status == 204 || len(body) == 0 {
@@ -288,23 +350,7 @@ func normalize(status int, body []byte, now time.Time) Player {
 			Name          string `json:"name"`
 			VolumePercent *int   `json:"volume_percent"`
 		} `json:"device"`
-		Item *struct {
-			Type       string `json:"type"`
-			URI        string `json:"uri"`
-			Name       string `json:"name"`
-			DurationMs int64  `json:"duration_ms"`
-			Artists    []struct {
-				Name string `json:"name"`
-			} `json:"artists"`
-			Album *struct {
-				Name   string     `json:"name"`
-				Images []apiImage `json:"images"`
-			} `json:"album"`
-			Show *struct {
-				Name string `json:"name"`
-			} `json:"show"`
-			Images []apiImage `json:"images"`
-		} `json:"item"`
+		Item *apiItem `json:"item"`
 	}
 	if err := json.Unmarshal(body, &d); err != nil || d.Device == nil {
 		return idle
@@ -314,29 +360,8 @@ func normalize(status int, body []byte, now time.Time) Player {
 	if d.Device.VolumePercent != nil {
 		p.Volume = *d.Device.VolumePercent
 	}
-	if it := d.Item; it != nil {
-		p.Title, p.TrackURI = it.Name, it.URI
-		p.Dur = time.Duration(it.DurationMs) * time.Millisecond
-		var images []apiImage
-		if it.Type == "episode" {
-			if it.Show != nil {
-				p.Artist = it.Show.Name
-			}
-			images = it.Images
-		} else {
-			names := make([]string, 0, len(it.Artists))
-			for _, a := range it.Artists {
-				names = append(names, a.Name)
-			}
-			p.Artist = strings.Join(names, ", ")
-			if it.Album != nil {
-				p.Album = it.Album.Name
-				images = it.Album.Images
-			}
-		}
-		if len(images) > 0 {
-			p.ArtURL = images[0].URL // largest first
-		}
+	if d.Item != nil {
+		p.fillFromItem(d.Item)
 	}
 	if p.Title == "" && d.CurrentlyPlayingType == "ad" {
 		p.Title = "Advertisement"

@@ -16,6 +16,7 @@ example is in [`config.example.json`](config.example.json).
 | `calendar_ttl_seconds` | `300` | How long a downloaded calendar is reused. |
 | `lyrics` | `true` | Fetch lyrics from LRCLIB. `false` sends nothing to LRCLIB. |
 | `lyrics_lead_seconds` | `2.0` | How early the highlighted line moves, because the screen is slow. Page turns use at most 1 s of this, so a page never changes while its last line is still being sung. |
+| `next_track_lead_seconds` | `3` | A few seconds before a song ends, the next song's cover and title are put on screen so they are there when it starts (the screen is slow). Negative switches this off. |
 | `poll_seconds` | `10` | How often Spotify is asked what is playing while a music screen is showing (other screens ask much less often). |
 | `progress_seconds` | `15` | The progress bar moves in steps this long (each step is a slow screen update). After you seek, the steps start from where you tapped. |
 | `full_refresh_every` | `40` | Partial screen updates before a full black-white flash that clears ghosting. |

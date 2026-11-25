@@ -94,6 +94,16 @@ func (d *demoPlayer) State(now time.Time) Player {
 		Volume: d.volume, ArtURL: "demo:prism", FetchedAt: now}
 }
 
+// NextTrack is what the demo plays after the current song.
+func (d *demoPlayer) NextTrack(now time.Time) Player {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.advance(now)
+	t := demoTracks[(d.idx+1)%len(demoTracks)]
+	return Player{Demo: true, Active: true, Playing: true, Title: t.title, Artist: t.artist, Album: t.album,
+		Dur: t.dur, Volume: -1, ArtURL: "demo:prism", FetchedAt: now}
+}
+
 func (d *demoPlayer) Act(action string, now time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

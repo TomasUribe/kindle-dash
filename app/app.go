@@ -40,21 +40,27 @@ type App struct {
 	redraw chan struct{}
 
 	// loop-goroutine state
-	view     View
-	orient   Orient
-	player   Player
-	pressed  string
+	view    View
+	orient  Orient
+	player  Player
+	pressed string
 	// where the last seek landed, and on which track, so the progress line is drawn from that point
 	seekAnchor time.Duration
 	seekKey    string
-	status   string
-	statusAt time.Time
-	battery  int
-	lightSt  LightState
-	night    bool
-	lastDev  *image.Gray
-	partials int
-	lastTap  time.Time
+	// the song after the current one (from Spotify's queue), looked up near the end of the current one
+	nextTrack Player
+	nextFor   string // key of the song nextTrack was looked up for
+	nextBusy  bool
+	nextTimer *time.Timer
+	early     earlySwap
+	status    string
+	statusAt  time.Time
+	battery   int
+	lightSt   LightState
+	night     bool
+	lastDev   *image.Gray
+	partials  int
+	lastTap   time.Time
 
 	lib               [libSections]LibList
 	libSec            LibSection
@@ -389,6 +395,12 @@ func (a *App) applyPlayer(p Player) {
 		a.setStatus(p.Err) // keep the last good info on screen
 		return
 	}
+	if a.early.from != "" {
+		if time.Now().Before(a.early.until) && p.Active && p.Playing && lyricsKey(p) == a.early.from {
+			return // Spotify still reports the old song; the next one is already on screen
+		}
+		a.early = earlySwap{}
+	}
 	a.setPlayer(p)
 }
 
@@ -591,19 +603,22 @@ func (a *App) lyricsKeyNow() string {
 
 // ensureLyrics looks the current track's lyrics up once and remembers them.
 func (a *App) ensureLyrics() {
-	if !a.cfg.UseLyrics() {
+	if a.player.Active {
+		a.ensureLyricsFor(a.player)
+	}
+}
+
+// ensureLyricsFor does the same for any song, so the next one can be ready before it starts.
+func (a *App) ensureLyricsFor(p Player) {
+	if !a.cfg.UseLyrics() || p.Title == "" {
 		return
 	}
-	key := a.lyricsKeyNow()
-	if key == "" {
-		return
-	}
+	key := lyricsKey(p)
 	if _, ok := a.lyrCache[key]; ok || a.lyrBusy[key] {
 		return
 	}
 	a.lyrBusy[key] = true
 	delete(a.lyrErr, key)
-	p := a.player
 	go func() {
 		var l *Lyrics
 		var err error
@@ -782,6 +797,7 @@ func (a *App) draw(force bool) {
 	}
 	a.lastDev = dev
 	a.scheduleLyricsTick()
+	a.prepareNext()
 }
 
 // lyricsDelay says how long until the lyrics need redrawing: the next moment something on the screen
@@ -829,6 +845,108 @@ func (a *App) scheduleLyricsTick() {
 	if d, ok := a.lyricsDelay(time.Now()); ok {
 		a.lyrTimer = time.AfterFunc(d, a.signal)
 	}
+}
+
+// --- showing the next song early ---------------------------------------------------------------------
+
+// nextLookahead is how long before a song ends that the next one is looked up.
+const nextLookahead = 25 * time.Second
+
+// earlySwap remembers that the next song was put on screen before Spotify said so.
+type earlySwap struct {
+	from  string    // the song Spotify last said was playing
+	until time.Time // after this, believe Spotify again whatever it says
+}
+
+func (a *App) musicShown() bool {
+	return a.view == ViewHome || a.view == ViewMusic || a.view == ViewLyrics
+}
+
+func (a *App) nextLead() time.Duration {
+	return time.Duration(a.cfg.NextTrackLead * float64(time.Second))
+}
+
+func (a *App) fetchNextTrack() (Player, bool, error) {
+	now := time.Now()
+	switch {
+	case a.demo:
+		return a.dp.NextTrack(now), true, nil
+	case !a.spot.Available():
+		return Player{}, false, nil
+	}
+	return a.spot.NextTrack(now)
+}
+
+// prepareNext runs after every draw. Near the end of a playing song it finds out what comes next, warms that
+// cover (and its lyrics, if the lyrics screen is up) and arms a timer that puts it on screen a few seconds
+// early, because the e-ink panel needs a moment to change.
+func (a *App) prepareNext() {
+	if a.nextTimer != nil {
+		a.nextTimer.Stop()
+		a.nextTimer = nil
+	}
+	p := a.player
+	lead := a.nextLead()
+	if lead < 0 || !a.musicShown() || !p.Active || !p.Playing || p.Dur <= 0 {
+		return
+	}
+	key := a.lyricsKeyNow()
+	left := p.Dur - p.Expected(time.Now())
+	if left > nextLookahead || left < 400*time.Millisecond {
+		return
+	}
+	if a.nextFor != key {
+		if !a.nextBusy {
+			a.lookUpNext(key)
+		}
+		return
+	}
+	if a.nextTrack.Title == "" {
+		return // nothing queued
+	}
+	a.nextTimer = time.AfterFunc(max(0, left-lead), func() { a.post(func() { a.showNextEarly(key) }) })
+}
+
+func (a *App) lookUpNext(key string) {
+	a.nextBusy = true
+	go func() {
+		np, ok, err := a.fetchNextTrack()
+		a.post(func() {
+			a.nextBusy = false
+			a.nextFor, a.nextTrack = key, Player{} // one try per song, whatever happens
+			if err != nil {
+				a.logf("next song lookup: %v", err)
+				return
+			}
+			if !ok || lyricsKey(np) == key {
+				return // nothing queued, or the same song again
+			}
+			a.nextTrack = np
+			a.art.Request(np.ArtURL, nil)
+			if a.view == ViewLyrics {
+				a.ensureLyricsFor(np)
+			}
+			a.logf("next song: %q", np.Title)
+		})
+	}()
+}
+
+// showNextEarly puts the next song on screen a little before it starts. Spotify's own answer takes over
+// as soon as it reports the new song, or after a few seconds if it does not.
+func (a *App) showNextEarly(key string) {
+	if a.lyricsKeyNow() != key || !a.player.Playing || a.pressed != "" || !a.musicShown() ||
+		a.nextFor != key || a.nextTrack.Title == "" {
+		return
+	}
+	now, lead := time.Now(), a.nextLead()
+	np := a.nextTrack
+	np.Active, np.Playing = true, true
+	np.Device, np.Volume = a.player.Device, a.player.Volume
+	np.Progress, np.FetchedAt = -lead, now // counts up from a moment before the song begins
+	a.logf("showing the next song %v early", lead)
+	a.setPlayer(np)
+	a.early = earlySwap{from: key, until: now.Add(lead + 10*time.Second)}
+	time.AfterFunc(lead+1500*time.Millisecond, func() { a.poll() }) // soon check what Spotify really plays
 }
 
 // Snapshot gives the simulator the latest logical frame.
