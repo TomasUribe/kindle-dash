@@ -153,13 +153,16 @@ func TestNextSongIsShownBeforeItStarts(t *testing.T) {
 		}
 	}
 
-	// the moment comes: the next song goes up, counting up from a little before zero
+	// the moment comes: the next song goes up, counting up from before zero (the time left in the old song)
 	a.showNextEarly(key)
-	if a.player.Title != want.title || a.player.Expected(time.Now()) > 0 || a.player.Dur != want.dur {
-		t.Fatalf("expected the next song on screen with progress not yet started: %+v", a.player)
+	if a.player.Title != want.title || a.player.Dur != want.dur {
+		t.Fatalf("expected the next song on screen: %+v", a.player)
 	}
-	if got := a.player.Expected(time.Now().Add(4 * time.Second)); got < 500*time.Millisecond || got > 1500*time.Millisecond {
-		t.Errorf("the song should be about 1 s in after 4 s, got %v", got)
+	if got := a.player.Expected(time.Now()); got > -10*time.Second || got < -12*time.Second {
+		t.Fatalf("the countdown should be the ~12 s left in the old song, got %v", got)
+	}
+	if got := a.player.Expected(time.Now().Add(13 * time.Second)); got < 500*time.Millisecond || got > 2500*time.Millisecond {
+		t.Errorf("the song should be about 1 s in once the old one ends, got %v", got)
 	}
 
 	// Spotify still reporting the old song must not flip the screen back
@@ -204,7 +207,79 @@ func TestNextSongLookupIsLeftAloneWhenNotNeeded(t *testing.T) {
 }
 
 func TestDefaultNextTrackLead(t *testing.T) {
-	if got := DemoConfig().NextTrackLead; got != 3 {
-		t.Errorf("default lead %v, want 3 s", got)
+	if got := DemoConfig().NextTrackLead; got != 4 {
+		t.Errorf("default lead %v, want 4 s", got)
+	}
+}
+
+// The progress in Spotify's answer belongs to the moment it was built, about halfway through the request;
+// dating it from the start of a slow request would make the song look behind by the whole delay.
+func TestPlayerStateIsDatedHalfwayThroughTheRequest(t *testing.T) {
+	s := newTestSpotify(t, &fakeSpotify{delay: 400 * time.Millisecond})
+	t0 := time.Now()
+	p := s.State(t0)
+	t1 := time.Now()
+	if p.Err != "" || p.Title != "T" || p.Progress != 60*time.Second {
+		t.Fatalf("state: %+v", p)
+	}
+	mid := t0.Add(t1.Sub(t0) / 2)
+	if d := p.FetchedAt.Sub(mid); d < -60*time.Millisecond || d > 60*time.Millisecond {
+		t.Errorf("fetched-at %v is %v away from the middle of the request", p.FetchedAt.Sub(t0), d)
+	}
+	if p.FetchedAt.Sub(t0) < 150*time.Millisecond {
+		t.Errorf("still dated from the start of the request: %v after it began", p.FetchedAt.Sub(t0))
+	}
+}
+
+// When Spotify will not say what is next, the app asks right after the song should end and keeps asking
+// until it changes, instead of waiting for the next regular poll.
+func TestEndOfSongPollingNoticesTheNewSong(t *testing.T) {
+	a := testApp(t, t.TempDir())
+	a.view = ViewMusic
+	nearEnd(a, 3, 700*time.Millisecond)
+	key := a.lyricsKeyNow()
+	start := time.Now()
+	go a.pollUntilChanged(key)
+	runTasks(t, a, func() bool { return a.lyricsKeyNow() != key })
+	if a.player.Title != demoTracks[4].title {
+		t.Errorf("expected the next demo song, got %q", a.player.Title)
+	}
+	if took := time.Since(start); took > 2500*time.Millisecond {
+		t.Errorf("the change took %v to notice (one retry should be enough)", took)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for a.endBusy.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if a.endBusy.Load() {
+		t.Error("the polling run should have finished")
+	}
+}
+
+func TestEndOfSongPollIsArmedOnlyWhenItMakesSense(t *testing.T) {
+	cases := map[string]struct {
+		setup func(a *App)
+		armed bool
+	}{
+		"playing, music on screen": {func(a *App) { nearEnd(a, 3, 60*time.Second) }, true},
+		"paused":                   {func(a *App) { nearEnd(a, 3, 60*time.Second); a.player.Playing = false }, false},
+		"music not on screen":      {func(a *App) { nearEnd(a, 3, 60*time.Second); a.view = ViewSettings }, false},
+		"unknown length":           {func(a *App) { nearEnd(a, 3, 60*time.Second); a.player.Dur = 0 }, false},
+		"nothing playing":          {func(a *App) { a.player = Player{} }, false},
+	}
+	for name, c := range cases {
+		a := testApp(t, t.TempDir())
+		a.view = ViewMusic
+		c.setup(a)
+		a.armEndPoll()
+		if got := a.endTimer != nil; got != c.armed {
+			t.Errorf("%s: armed=%v, want %v", name, got, c.armed)
+		}
+		if a.endTimer != nil {
+			a.endTimer.Stop()
+		}
+		if a.nextTimer != nil {
+			a.nextTimer.Stop()
+		}
 	}
 }

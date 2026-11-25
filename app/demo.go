@@ -23,7 +23,8 @@ func demoEvents(now time.Time, loc *time.Location) []Event {
 	whole := func(cal, title string, day, days int) Event {
 		return Event{Title: title, Cal: cal, Start: at(day, 0, 0), End: at(day+days, 0, 0), AllDay: true}
 	}
-	return []Event{
+	withDesc := func(e Event, d string) Event { e.Desc = d; return e }
+	events := []Event{
 		timed("Work", "Stand-up", "Meet", at(0, clamp(h-3, 0, 20), 0), at(0, clamp(h-3, 0, 20), 15)),
 		timed("Work", "Design review", "Room 4B", at(0, h, 0), at(0, clamp(h+1, 0, 23), 59)),
 		timed("Personal", "Dentist", "12 Example Street", at(0, clamp(h+3, 0, 21), 30), at(0, clamp(h+4, 0, 22), 15)),
@@ -35,7 +36,25 @@ func demoEvents(now time.Time, loc *time.Location) []Event {
 		whole("Travel", "Conference trip", 2, 3),
 		timed("Training", "Long ride", "", at(3, 6, 0), at(3, 9, 30)),
 		timed("Personal", "Climbing", "", at(4, 18, 30), at(4, 20, 0)),
+
+		// further out and a little back, so there is something to browse
+		timed("Work", "Retrospective", "Room 4B", at(-12, 15, 0), at(-12, 16, 0)),
+		timed("Work", "Quarterly review", "Room 2A", at(9, 10, 0), at(9, 11, 30)),
+		whole("Travel", "Team offsite", 21, 2),
+		timed("Personal", "Dentist check-up", "12 Example Street", at(45, 9, 0), at(45, 9, 45)),
+		timed("Training", "Race day", "", at(75, 7, 0), at(75, 11, 30)),
+		whole("Family", "Family reunion", 130, 3),
 	}
+	// give a few events a description, to see the detail screen
+	events[1] = withDesc(events[1], "Walk through the new calendar screen with the whole team.\n\nBring: the printed agenda, your questions, and the laptop with the latest build.\n\nNotes from the last review are in the shared folder.")
+	events[2] = withDesc(events[2], "Six-month check-up and cleaning. Arrive ten minutes early and bring your insurance card.")
+	events[7] = withDesc(events[7], "Boarding starts 40 minutes before departure. Check in online the evening before.")
+	// a weekly evening and a Thursday class over the coming months
+	for i := 0; i < 30; i++ {
+		events = append(events, timed("Family", "Book club", "Corner Bistro", at(7*i+3, 19, 0), at(7*i+3, 21, 0)))
+		events = append(events, timed("Work", "Team workshop", "Room 4B", at(7*i+1, 14, 0), at(7*i+1, 15, 30)))
+	}
+	return events
 }
 
 // demoPlayer is a tiny fake Spotify that answers the controls, for design work without accounts.

@@ -47,11 +47,17 @@ type App struct {
 	// where the last seek landed, and on which track, so the progress line is drawn from that point
 	seekAnchor time.Duration
 	seekKey    string
+	// the Calendar screen: which month, day and event is showing, and what the last frame listed
+	calv                CalView
+	calRows             []Row
+	calPages, calDPages int
 	// the song after the current one (from Spotify's queue), looked up near the end of the current one
 	nextTrack Player
 	nextFor   string // key of the song nextTrack was looked up for
 	nextBusy  bool
 	nextTimer *time.Timer
+	endTimer  *time.Timer // asks Spotify right when the song should end
+	endBusy   atomic.Bool // a "keep asking until it changes" run is going
 	early     earlySwap
 	status    string
 	statusAt  time.Time
@@ -208,6 +214,8 @@ func (a *App) handle(ev InputEvent) (quit bool) {
 		a.libraryAction(act)
 	case strings.HasPrefix(act, "lyr_"):
 		a.lyricsAction(act)
+	case strings.HasPrefix(act, "cal_"):
+		a.calendarAction(act)
 	case strings.HasPrefix(act, "seek:"):
 		n, _ := strconv.Atoi(strings.TrimPrefix(act, "seek:"))
 		a.seekTo(n)
@@ -665,6 +673,53 @@ func (a *App) lyricsAction(act string) {
 	a.draw(false)
 }
 
+// --- calendar browsing ---------------------------------------------------------------------
+
+// calendarAction handles taps on the Calendar screen: months, days, events and pages.
+func (a *App) calendarAction(act string) {
+	v := &a.calv
+	loc := a.cfg.Loc
+	now := time.Now().In(loc)
+	back, ahead := a.cfg.CalendarBrowseBack, a.cfg.CalendarBrowseAhead
+	switch {
+	case act == "cal_prev":
+		v.Off, v.Day, v.Page = max(v.Off-1, -back), time.Time{}, 0
+	case act == "cal_next":
+		v.Off, v.Day, v.Page = min(v.Off+1, ahead), time.Time{}, 0
+	case act == "cal_today":
+		*v = CalView{}
+	case strings.HasPrefix(act, "cal_day:"):
+		if d, err := time.ParseInLocation("20060102", strings.TrimPrefix(act, "cal_day:"), loc); err == nil {
+			v.Day, v.Page = d, 0
+		}
+	case act == "cal_dprev" || act == "cal_dnext":
+		step := 1
+		if act == "cal_dprev" {
+			step = -1
+		}
+		d := v.Day.AddDate(0, 0, step)
+		if m := monthsBetween(now, d); !v.Day.IsZero() && m >= -back && m <= ahead {
+			v.Day, v.Off, v.Page = d, m, 0
+		}
+	case strings.HasPrefix(act, "cal_ev:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(act, "cal_ev:")); err == nil && i >= 0 && i < len(a.calRows) {
+			row := a.calRows[i]
+			v.Detail, v.DPage = &row, 0
+		}
+	case act == "cal_back":
+		v.Detail = nil
+	case act == "cal_page_prev":
+		v.Page = max(0, v.Page-1)
+	case act == "cal_page_next":
+		v.Page = min(v.Page+1, max(0, a.calPages-1))
+	case act == "cal_dpage_prev":
+		v.DPage = max(0, v.DPage-1)
+	case act == "cal_dpage_next":
+		v.DPage = min(v.DPage+1, max(0, a.calDPages-1))
+	}
+	a.draw(false)
+}
+
 // --- timers -------------------------------------------------------------------------------
 
 func (a *App) background() {
@@ -744,6 +799,7 @@ func (a *App) scene(now time.Time) *Scene {
 	key := a.lyricsKeyNow()
 	s.Lyrics = LyricsView{L: a.lyrCache[key], Loading: a.lyrBusy[key], Err: a.lyrErr[key], Disabled: !a.cfg.UseLyrics(),
 		Page: a.lyrPage, Auto: a.lyrAuto, Size: a.lyrSize, Highlight: a.lyrHL}
+	s.Cal = a.calv
 	return s
 }
 
@@ -760,6 +816,13 @@ func (a *App) draw(force bool) {
 		a.libRows, a.libPage, a.libPages = s.Out.LibRows, s.Out.LibPage, s.Out.LibPages
 	case ViewLyrics:
 		a.lyrShown, a.lyrPages, a.lyrTurns = s.Out.LyrPage, s.Out.LyrPages, s.Out.LyrTurns
+	case ViewCalendar:
+		a.calRows, a.calPages, a.calDPages = s.Out.CalRows, s.Out.CalPages, s.Out.CalDPages
+		if a.calv.Detail != nil {
+			a.calv.DPage = s.Out.CalDPage
+		} else {
+			a.calv.Page = s.Out.CalPage
+		}
 	}
 	a.mu.Lock()
 	a.last, a.lastOrient, a.hits = canvas.Img, a.orient, hits
@@ -798,6 +861,7 @@ func (a *App) draw(force bool) {
 	a.lastDev = dev
 	a.scheduleLyricsTick()
 	a.prepareNext()
+	a.armEndPoll()
 }
 
 // lyricsDelay says how long until the lyrics need redrawing: the next moment something on the screen
@@ -918,8 +982,14 @@ func (a *App) lookUpNext(key string) {
 				a.logf("next song lookup: %v", err)
 				return
 			}
-			if !ok || lyricsKey(np) == key {
-				return // nothing queued, or the same song again
+			if !ok {
+				// Spotify hides what is next for playlists you do not own (and some it makes itself); the
+				// app then relies on asking right when the song ends (armEndPoll).
+				a.logf("next song: Spotify does not list one")
+				return
+			}
+			if lyricsKey(np) == key {
+				return // the same song again
 			}
 			a.nextTrack = np
 			a.art.Request(np.ArtURL, nil)
@@ -931,6 +1001,54 @@ func (a *App) lookUpNext(key string) {
 	}()
 }
 
+const (
+	endPollDelay = 400 * time.Millisecond  // after the song should have ended
+	endPollEvery = 1200 * time.Millisecond // then again, until it has changed
+	endPollTries = 8
+)
+
+// armEndPoll is for when the next song is not known in advance. Instead of waiting for the next regular
+// poll (up to ten seconds), it asks Spotify just after the song should end, and keeps asking every second
+// or so until the new song shows up.
+func (a *App) armEndPoll() {
+	if a.endTimer != nil {
+		a.endTimer.Stop()
+		a.endTimer = nil
+	}
+	p := a.player
+	if !a.musicShown() || !p.Active || !p.Playing || p.Dur <= 0 {
+		return
+	}
+	key := a.lyricsKeyNow()
+	left := p.Dur - p.Expected(time.Now())
+	a.endTimer = time.AfterFunc(left+endPollDelay, func() { a.pollUntilChanged(key) })
+}
+
+// pollUntilChanged asks Spotify what is playing until it is not the song with oldKey any more (or the
+// music stops, or the screen changes), applying each answer as it arrives.
+func (a *App) pollUntilChanged(oldKey string) {
+	if !a.endBusy.CompareAndSwap(false, true) {
+		return
+	}
+	defer a.endBusy.Store(false)
+	for i := 1; i <= endPollTries; i++ {
+		p := a.fetchPlayer()
+		done := make(chan bool, 1)
+		a.post(func() {
+			a.applyPlayer(p)
+			changed := a.lyricsKeyNow() != oldKey
+			if changed {
+				a.logf("song change noticed on check %d after the expected end", i)
+			}
+			done <- changed || !a.player.Playing || !a.musicShown()
+		})
+		if <-done {
+			return
+		}
+		time.Sleep(endPollEvery)
+	}
+}
+
 // showNextEarly puts the next song on screen a little before it starts. Spotify's own answer takes over
 // as soon as it reports the new song, or after a few seconds if it does not.
 func (a *App) showNextEarly(key string) {
@@ -938,15 +1056,16 @@ func (a *App) showNextEarly(key string) {
 		a.nextFor != key || a.nextTrack.Title == "" {
 		return
 	}
-	now, lead := time.Now(), a.nextLead()
+	now := time.Now()
+	left := max(0, a.player.Dur-a.player.Expected(now)) // time until the current song ends
 	np := a.nextTrack
 	np.Active, np.Playing = true, true
 	np.Device, np.Volume = a.player.Device, a.player.Volume
-	np.Progress, np.FetchedAt = -lead, now // counts up from a moment before the song begins
-	a.logf("showing the next song %v early", lead)
+	np.Progress, np.FetchedAt = -left, now // counts up from before the song begins: zero when it starts
+	a.logf("showing the next song %v early", left.Round(100*time.Millisecond))
 	a.setPlayer(np)
-	a.early = earlySwap{from: key, until: now.Add(lead + 10*time.Second)}
-	time.AfterFunc(lead+1500*time.Millisecond, func() { a.poll() }) // soon check what Spotify really plays
+	a.early = earlySwap{from: key, until: now.Add(left + 10*time.Second)}
+	time.AfterFunc(left+1500*time.Millisecond, func() { a.poll() }) // soon after it starts, check what Spotify really plays
 }
 
 // Snapshot gives the simulator the latest logical frame.

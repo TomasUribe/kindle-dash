@@ -11,11 +11,11 @@ and no computer left switched on, and everything is drawn for a slow e-ink scree
 
 * **Music**: the album cover is the centrepiece. Play, pause, skip, volume. **Tap or drag on the progress line to jump
   to any point in the song.**
-* **Next cover ready in time:** a few seconds before a song ends, the next song's cover and title are already on screen.
+* **Next cover ready in time:** when Spotify tells the app what plays next (albums, your own playlists, songs you queued), the next song's cover and title go up a few seconds before it starts. Spotify hides that for playlists you do not own, so then the app asks again right when the song ends and every second after, and the new song appears within a couple of seconds instead of at the next 10-second check.
 * **Lyrics**: synced lyrics a page at a time with the cover and controls on top. The highlighted line moves a moment
   *before* it is sung, because e-ink needs time to redraw, and pages turn only after the last line has been sung.
 * **Library**: browse your playlists, albums, liked songs, recent plays and Spotify devices, and tap to play.
-* **Calendar**: a month view and an agenda from any number of Google calendars. Today's current event is inverted.
+* **Calendar**: browse any month (a year back, two years ahead) from any number of Google calendars. Tap a day to see its events, step day by day with the arrows, tap an event for its time, place and full description. Today's current event is inverted.
 * **Home**: now playing and today's agenda on one screen.
 * **Settings**: front light and warm light, night mode (inverted), 12/24-hour clock, force a clean refresh.
 * Portrait and both landscape orientations. It remembers where you were.
@@ -87,6 +87,7 @@ it can read that calendar, and *Reset* next to it in Google Calendar cancels it.
 | Tap | Press a button, a row, or a tab at the bottom. |
 | **Tap or drag on the progress line** | Jump to that point in the song. |
 | Swipe left / right | Next / previous screen. |
+| **Calendar** screen | ‹ › change month, **Today** jumps back, tap a day to list it (‹ › then step day by day), tap an event to open it, **Back** returns. Long lists and descriptions have page buttons. |
 | **Rotate** tab | Portrait, landscape, landscape the other way. |
 | **Exit** tab or the power button | Back to the normal Kindle home screen. |
 | Plug in the USB cable | Also closes it, so the Kindle can be a USB drive again. |

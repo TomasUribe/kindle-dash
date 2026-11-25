@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,8 +71,7 @@ func (s *CalendarSource) Agenda(now time.Time) Agenda {
 }
 
 func fetchAll(cfg *Config, now time.Time) ([]Event, []string) {
-	winStart := midnight(now.In(cfg.Loc), cfg.Loc).AddDate(0, 0, -1)
-	winEnd := winStart.AddDate(0, 0, cfg.CalendarLookahead+2)
+	winStart, winEnd := browseWindow(cfg, now)
 
 	type result struct {
 		events []Event
@@ -113,6 +114,19 @@ func fetchAll(cfg *Config, now time.Time) ([]Event, []string) {
 		}
 	}
 	return dedupe(all), failed
+}
+
+// browseWindow is the span events are expanded for: what the Calendar screen can browse, and at least
+// the agenda's own look-ahead.
+func browseWindow(cfg *Config, now time.Time) (start, end time.Time) {
+	n := now.In(cfg.Loc)
+	first := time.Date(n.Year(), n.Month(), 1, 0, 0, 0, 0, cfg.Loc)
+	start = first.AddDate(0, -cfg.CalendarBrowseBack, 0)
+	end = first.AddDate(0, cfg.CalendarBrowseAhead+1, 0)
+	if agendaEnd := midnight(n, cfg.Loc).AddDate(0, 0, cfg.CalendarLookahead+2); agendaEnd.After(end) {
+		end = agendaEnd
+	}
+	return start, end
 }
 
 // safeErr drops the URL from network errors: the iCal address is a secret.
@@ -159,6 +173,7 @@ func dedupe(events []Event) []Event {
 
 type vevent struct {
 	uid, title, loc string
+	desc            string
 	start, end      time.Time // in the event's own zone, so repeats keep their wall-clock time
 	allDay          bool
 	cancelled       bool
@@ -198,7 +213,7 @@ func eventsFromICS(data []byte, calName string, winStart, winEnd time.Time, loc 
 		if !start.Before(winEnd) || !maxTime(end, start.Add(time.Second)).After(winStart) {
 			return
 		}
-		out = append(out, Event{Title: v.title, Location: v.loc, Cal: calName,
+		out = append(out, Event{Title: v.title, Location: v.loc, Cal: calName, Desc: v.desc,
 			Start: start.In(loc), End: end.In(loc), AllDay: v.allDay})
 	}
 
@@ -252,6 +267,9 @@ func parseVEvent(ev *ics.VEvent, loc *time.Location) (*vevent, bool) {
 	}
 	v.title = textValue(ev, ics.ComponentPropertySummary)
 	v.loc = textValue(ev, ics.ComponentPropertyLocation)
+	if p := ev.GetProperty(ics.ComponentPropertyDescription); p != nil {
+		v.desc = cleanDescription(p.Value)
+	}
 	v.cancelled = strings.EqualFold(strings.TrimSpace(textValue(ev, ics.ComponentPropertyStatus)), "CANCELLED")
 
 	switch {
@@ -308,6 +326,42 @@ func textValue(ev *ics.VEvent, prop ics.ComponentProperty) string {
 func unescapeText(s string) string {
 	r := strings.NewReplacer(`\n`, " ", `\N`, " ", `\,`, ",", `\;`, ";", `\\`, `\`)
 	return strings.Join(strings.Fields(r.Replace(s)), " ")
+}
+
+var (
+	htmlBreak = regexp.MustCompile(`(?i)<\s*(br|/p|/div|/li|/h[1-6]|/tr)\s*/?>`)
+	htmlTag   = regexp.MustCompile(`<[^>]*>`)
+)
+
+const maxDescription = 3000
+
+// cleanDescription turns an iCal DESCRIPTION into plain text: escapes undone, simple HTML flattened,
+// paragraphs kept as line breaks, blank runs collapsed, and the length capped.
+func cleanDescription(raw string) string {
+	r := strings.NewReplacer(`\n`, "\n", `\N`, "\n", `\,`, ",", `\;`, ";", `\\`, `\`)
+	t := r.Replace(raw)
+	t = htmlBreak.ReplaceAllString(t, "\n")
+	t = htmlTag.ReplaceAllString(t, "")
+	t = html.UnescapeString(t)
+	var out []string
+	blank := true // drops leading blank lines
+	for _, line := range strings.Split(strings.ReplaceAll(t, "\r", ""), "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if line == "" {
+			if !blank {
+				out = append(out, "")
+			}
+			blank = true
+			continue
+		}
+		out = append(out, line)
+		blank = false
+	}
+	t = strings.TrimSpace(strings.Join(out, "\n"))
+	if rs := []rune(t); len(rs) > maxDescription {
+		t = strings.TrimSpace(string(rs[:maxDescription])) + "…"
+	}
+	return t
 }
 
 func first(v []string) string {
@@ -416,6 +470,28 @@ func midnight(t time.Time, loc *time.Location) time.Time {
 
 // --- grouping into days -----------------------------------------------------
 
+// rowsForDay lists what happens on one day, all-day events first, then by start time.
+func rowsForDay(events []Event, dayStart time.Time, cfg *Config) []Row {
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	var rows []Row
+	for _, e := range events {
+		end := maxTime(e.End, e.Start.Add(time.Second))
+		if e.Start.Before(dayEnd) && end.After(dayStart) {
+			rows = append(rows, makeRow(e, dayStart, dayEnd, cfg.Use24h()))
+		}
+	}
+	sort.SliceStable(rows, func(a, b int) bool {
+		if rows[a].AllDay != rows[b].AllDay {
+			return rows[a].AllDay
+		}
+		if !rows[a].Start.Equal(rows[b].Start) {
+			return rows[a].Start.Before(rows[b].Start)
+		}
+		return rows[a].Title < rows[b].Title
+	})
+	return rows
+}
+
 func buildDays(events []Event, now time.Time, cfg *Config) []Day {
 	now = now.In(cfg.Loc)
 	today := midnight(now, cfg.Loc)
@@ -426,23 +502,7 @@ func buildDays(events []Event, now time.Time, cfg *Config) []Day {
 			break
 		}
 		dayStart := today.AddDate(0, 0, i)
-		dayEnd := today.AddDate(0, 0, i+1)
-		var rows []Row
-		for _, e := range events {
-			end := maxTime(e.End, e.Start.Add(time.Second))
-			if e.Start.Before(dayEnd) && end.After(dayStart) {
-				rows = append(rows, makeRow(e, dayStart, dayEnd, cfg.Use24h()))
-			}
-		}
-		sort.SliceStable(rows, func(a, b int) bool {
-			if rows[a].AllDay != rows[b].AllDay {
-				return rows[a].AllDay
-			}
-			if !rows[a].Start.Equal(rows[b].Start) {
-				return rows[a].Start.Before(rows[b].Start)
-			}
-			return rows[a].Title < rows[b].Title
-		})
+		rows := rowsForDay(events, dayStart, cfg)
 		if len(rows) == 0 && i != 0 {
 			continue
 		}
@@ -455,6 +515,17 @@ func buildDays(events []Event, now time.Time, cfg *Config) []Day {
 		}
 		listed += len(rows)
 		days = append(days, Day{Label: label, Sub: dayStart.Format("Mon 02 Jan"), Date: dayStart, Rows: rows})
+	}
+	return days
+}
+
+// buildMonthDays lists the days of a month that have something on, for the month overview.
+func buildMonthDays(events []Event, month time.Time, cfg *Config) []Day {
+	var days []Day
+	for d := month; d.Month() == month.Month(); d = d.AddDate(0, 0, 1) {
+		if rows := rowsForDay(events, d, cfg); len(rows) > 0 {
+			days = append(days, Day{Label: d.Format("Monday"), Sub: d.Format("Mon 02 Jan"), Date: d, Rows: rows})
+		}
 	}
 	return days
 }
@@ -479,7 +550,7 @@ func makeRow(e Event, dayStart, dayEnd time.Time, h24 bool) Row {
 	if title == "" {
 		title = "(No title)"
 	}
-	return Row{Title: title, Location: e.Location, Cal: e.Cal, When: when,
+	return Row{Title: title, Location: e.Location, Cal: e.Cal, When: when, Desc: e.Desc,
 		Start: e.Start, End: e.End, AllDay: e.AllDay}
 }
 

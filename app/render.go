@@ -73,6 +73,7 @@ type Scene struct {
 	Night   bool // inverted display
 	Library LibView
 	Lyrics  LyricsView
+	Cal     CalView
 	Out     *SceneOut // filled in by Render: paging facts the app needs for its buttons
 
 	// SeekAnchor is where the last seek landed on this track. The progress line steps from there, not
@@ -87,6 +88,9 @@ type SceneOut struct {
 	LibRows, LibPage, LibPages int
 	LyrPage, LyrPages, LyrLine int             // the page shown and the line marked as being sung (-1: none)
 	LyrTurns                   []time.Duration // song time at which pages 1.. come up while following
+	CalRows                    []Row           // events listed on the Calendar screen, in tap order
+	CalPage, CalPages          int             // page of the event list shown, and how many there are
+	CalDPage, CalDPages        int             // the same for the text of an open event
 }
 
 func (s *Scene) out() *SceneOut {

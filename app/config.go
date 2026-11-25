@@ -17,24 +17,26 @@ type CalendarSpec struct {
 
 // Config is read from config.json next to the program (written by tools/make-device-config.py).
 type Config struct {
-	Calendars          []CalendarSpec `json:"calendars"`
-	CalendarDays       int            `json:"calendar_days"`      // days always listed
-	CalendarLookahead  int            `json:"calendar_lookahead"` // how far to look on a quiet week
-	CalendarTTLSeconds int            `json:"calendar_ttl_seconds"`
-	SpotifyClientID    string         `json:"spotify_client_id"`
-	SpotifyTokenFile   string         `json:"spotify_token_file"`
-	Timezone           string         `json:"timezone"`
-	Clock24            *bool          `json:"clock24"`
-	WeekStartsMonday   *bool          `json:"week_starts_monday"`
-	PollSeconds        int            `json:"poll_seconds"`
-	ProgressSeconds    int            `json:"progress_seconds"`   // progress bar moves in steps this long
-	FullRefreshEvery   int            `json:"full_refresh_every"` // partial updates before a clean flash
-	FbinkFullArgs      []string       `json:"fbink_full_args"`    // default: -c -f
-	FbinkPartialArgs   []string       `json:"fbink_partial_args"` // default: none (try -W GL16)
-	LyricsEnabled      *bool          `json:"lyrics"`
-	LyricsLeadSeconds  float64        `json:"lyrics_lead_seconds"`     // show a line this long before it is sung
-	NextTrackLead      float64        `json:"next_track_lead_seconds"` // show the next song's cover and title this long before it starts; negative: off
-	StateFile          string         `json:"state_file"`              // remembers view and orientation
+	Calendars           []CalendarSpec `json:"calendars"`
+	CalendarDays        int            `json:"calendar_days"`      // days always listed
+	CalendarLookahead   int            `json:"calendar_lookahead"` // how far to look on a quiet week
+	CalendarTTLSeconds  int            `json:"calendar_ttl_seconds"`
+	CalendarBrowseBack  int            `json:"calendar_browse_back_months"`  // how far back the Calendar screen can go
+	CalendarBrowseAhead int            `json:"calendar_browse_ahead_months"` // and how far forward
+	SpotifyClientID     string         `json:"spotify_client_id"`
+	SpotifyTokenFile    string         `json:"spotify_token_file"`
+	Timezone            string         `json:"timezone"`
+	Clock24             *bool          `json:"clock24"`
+	WeekStartsMonday    *bool          `json:"week_starts_monday"`
+	PollSeconds         int            `json:"poll_seconds"`
+	ProgressSeconds     int            `json:"progress_seconds"`   // progress bar moves in steps this long
+	FullRefreshEvery    int            `json:"full_refresh_every"` // partial updates before a clean flash
+	FbinkFullArgs       []string       `json:"fbink_full_args"`    // default: -c -f
+	FbinkPartialArgs    []string       `json:"fbink_partial_args"` // default: none (try -W GL16)
+	LyricsEnabled       *bool          `json:"lyrics"`
+	LyricsLeadSeconds   float64        `json:"lyrics_lead_seconds"`     // show a line this long before it is sung
+	NextTrackLead       float64        `json:"next_track_lead_seconds"` // show the next song's cover and title this long before it starts; negative: off
+	StateFile           string         `json:"state_file"`              // remembers view and orientation
 
 	Loc *time.Location `json:"-"`
 	Dir string         `json:"-"`
@@ -77,6 +79,12 @@ func (c *Config) applyDefaults() {
 	if c.CalendarTTLSeconds <= 0 {
 		c.CalendarTTLSeconds = 300
 	}
+	if c.CalendarBrowseBack <= 0 {
+		c.CalendarBrowseBack = 12
+	}
+	if c.CalendarBrowseAhead <= 0 {
+		c.CalendarBrowseAhead = 24
+	}
 	if c.PollSeconds <= 0 {
 		c.PollSeconds = 10 // e-ink is slow: asking more often only costs battery
 	}
@@ -87,7 +95,7 @@ func (c *Config) applyDefaults() {
 		c.LyricsLeadSeconds = 2.0 // the panel needs a moment to redraw, so the highlight runs early
 	}
 	if c.NextTrackLead == 0 {
-		c.NextTrackLead = 3 // the screen needs a moment, so the next cover goes up just before the song starts
+		c.NextTrackLead = 4 // the screen needs a moment, so the next cover goes up just before the song starts
 	}
 	if c.FullRefreshEvery <= 0 {
 		c.FullRefreshEvery = 40

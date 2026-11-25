@@ -5,6 +5,7 @@ import "time"
 // Event is one calendar entry after repeats have been expanded.
 type Event struct {
 	Title, Location, Cal string
+	Desc                 string // plain-text description, may be empty
 	Start, End           time.Time
 	AllDay               bool
 }
@@ -12,6 +13,7 @@ type Event struct {
 // Row is an event as listed under one particular day.
 type Row struct {
 	Title, Location, Cal, When string
+	Desc                       string
 	Start, End                 time.Time
 	AllDay                     bool
 }

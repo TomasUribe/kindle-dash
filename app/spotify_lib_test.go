@@ -20,7 +20,8 @@ type fakeSpotify struct {
 	transfer string
 	noDevice bool // first play fails with NO_ACTIVE_DEVICE
 	scope403 bool
-	seeks    []string // position_ms of each PUT /me/player/seek
+	seeks    []string      // position_ms of each PUT /me/player/seek
+	delay    time.Duration // how long the player-state answer takes
 }
 
 func (f *fakeSpotify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +49,11 @@ func (f *fakeSpotify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"devices":[{"id":"d1","name":"Living room","type":"Speaker","is_active":false},
 		  {"id":"d2","name":"Phone","type":"Smartphone","is_active":true},
 		  {"id":"d3","name":"Locked","type":"TV","is_restricted":true}]}`)
+	case r.URL.Path == "/me/player" && r.Method == "GET":
+		time.Sleep(f.delay)
+		fmt.Fprint(w, `{"is_playing":true,"progress_ms":60000,"device":{"name":"D","volume_percent":50},
+		  "item":{"type":"track","uri":"spotify:track:t","name":"T","duration_ms":200000,"artists":[{"name":"A"}],
+		  "album":{"name":"B","images":[{"url":"https://img.example/c.jpg"}]}}}`)
 	case r.URL.Path == "/me/player/queue" && r.Method == "GET":
 		fmt.Fprint(w, `{"currently_playing":{"name":"Now","uri":"spotify:track:now"},"queue":[
 		  {"type":"track","name":"Up Next","uri":"spotify:track:next","duration_ms":181000,

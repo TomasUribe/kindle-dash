@@ -156,6 +156,32 @@ func renderAll(dir string, cfg *Config, demo bool) error {
 			f.Close()
 		}
 	}
+	// the calendar's other states: another month, one day, one event
+	if demo {
+		next := CalView{Off: 1}
+		day := CalView{Day: midnight(now, cfg.Loc).AddDate(0, 0, 2)}
+		var ev Row
+		if rows := rowsForDay(cal.Agenda(now).Events, midnight(now, cfg.Loc), cfg); len(rows) > 1 {
+			ev = rows[1]
+		}
+		detail := CalView{Detail: &ev}
+		for name, cv := range map[string]CalView{"calendar-month": next, "calendar-day": day, "calendar-event": detail} {
+			for oi, on := range orients {
+				s := &Scene{Now: now, Cfg: cfg, View: ViewCalendar, Orient: Orient(oi), Agenda: cal.Agenda(now),
+					Player: player, Battery: 78, Light: NewFrontLight().Read(), Cal: cv}
+				canvas, _ := Render(s)
+				f, err := os.Create(filepath.Join(dir, fmt.Sprintf("%s-%s.png", name, on)))
+				if err != nil {
+					return err
+				}
+				if err := png.Encode(f, canvas.Img); err != nil {
+					f.Close()
+					return err
+				}
+				f.Close()
+			}
+		}
+	}
 	fmt.Println("wrote", len(names)*len(orients), "images to", dir)
 	return nil
 }

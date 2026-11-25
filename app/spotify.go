@@ -72,11 +72,14 @@ func (s *Spotify) Available() bool {
 
 // State reads what is playing right now. It never sends a command.
 func (s *Spotify) State(now time.Time) Player {
+	t0 := time.Now()
 	status, body, err := s.request("GET", "/me/player", url.Values{"additional_types": {"episode"}}, nil)
 	if err != nil {
 		return Player{Err: err.Error(), Volume: -1, Hint: "Spotify unavailable", FetchedAt: now}
 	}
-	return normalize(status, body, now)
+	// The progress in the answer is for the moment Spotify built it, about halfway through the request.
+	// Counting from the start would put the song up to a second or two behind on a slow connection.
+	return normalize(status, body, t0.Add(time.Since(t0)/2))
 }
 
 // Act runs one control action and returns the fresh state.
